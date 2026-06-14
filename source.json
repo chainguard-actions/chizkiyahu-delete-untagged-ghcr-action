@@ -1,0 +1,11 @@
+{
+  "owner": "chizkiyahu",
+  "repo": "delete-untagged-ghcr-action",
+  "version": "v6.1.0",
+  "commit_sha": "68758dd8caf1d9dbaed1fe9cc1a1f8fcea1c4cf0",
+  "url": "https://github.com/chizkiyahu/delete-untagged-ghcr-action",
+  "policy_sha": "d636be7e43ef829af6e853da6b3c7566db9f72fe",
+  "test_policy_sha": "843adf9e4b8f85d0c08b27b9d0b09dd094b54702",
+  "test_agent_version": "1",
+  "harden_agent_version": "1"
+}
