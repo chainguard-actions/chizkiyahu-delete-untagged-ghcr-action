@@ -9,6 +9,7 @@ Hardened by [Chainguard](https://www.chainguard.dev) from the upstream action at
 | Version | Tag | Upstream commit |
 |---------|-----|-----------------|
 | v6.1.0 | [`v6.1.0`](https://github.com/chainguard-actions/chizkiyahu-delete-untagged-ghcr-action/tree/v6.1.0) | [`68758dd`](https://github.com/chizkiyahu/delete-untagged-ghcr-action/commit/68758dd8caf1d9dbaed1fe9cc1a1f8fcea1c4cf0) |
+| v6.1.1 | [`v6.1.1`](https://github.com/chainguard-actions/chizkiyahu-delete-untagged-ghcr-action/tree/v6.1.1) | [`707cf4f`](https://github.com/chizkiyahu/delete-untagged-ghcr-action/commit/707cf4f1445ec3e3f5c7bfc83a023fb868cd1174) |
 
 ## Privacy
 
