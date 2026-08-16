@@ -8,65 +8,93 @@
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
-**Harden Agent Version:** `1`
+**Harden Agent Version:** `2`
 
-Action **chizkiyahu--delete-untagged-ghcr-action/v6.0.0** was hardened automatically. 12 finding(s) were identified and resolved across 1 iteration(s).
+Action **chizkiyahu--delete-untagged-ghcr-action/v6.0.0** was hardened automatically. 17 finding(s) were identified and resolved across 2 iteration(s).
 
 ## Findings Fixed
 
 ### script-injection (severity: high)
 
-Multiple `${{ ... }}` expressions are interpolated directly inside `run:` shell command strings in action.yml, violating sub-rule (a). This allows a caller to inject arbitrary shell commands via crafted input values.
-
-**Step: "Install Python dependencies" (line 47):**
-`run: pip install -r ${{ github.action_path }}/requirements.txt`
-
-**Step: "Run action" (lines 56–69):**
-- `args=( "--token" "${{ inputs.token }}" )` — line 56
-- `args+=( "--repository_owner" "${{ inputs.repository_owner }}" )` — line 57
-- `if [[ -n "${{ inputs.repository }}" ]]; then` — line 58
-- `args+=( "--repository" "${{ inputs.repository }}" )` — line 59
-- `if [[ -n "${{ inputs.package_name }}" ]]; then` — line 61
-- `args+=( "--package_names" "${{ inputs.package_name }}" )` — line 62
-- `args+=( "--untagged_only" "${{ inputs.untagged_only }}" )` — line 64
-- `args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )` — line 65
-- `args+=( "--with_sigs" "${{ inputs.with_sigs }}")` — line 66
-- `args+=( "--owner_type" "${{ inputs.owner_type }}" )` — line 67
-- `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"` — line 69
-
-All `inputs.*` values should be passed via `env:` variables and referenced as `"$ENV_VAR"` in the shell script instead.
+The 'Run action' step in action.yml directly interpolates multiple ${{ inputs.* }} and ${{ github.action_path }} expressions inside a run: shell script (rule a). This allows an attacker who controls the calling workflow to inject arbitrary shell commands. Offending lines include: `args=( "--token" "${{ inputs.token }}" )`, `args+=( "--repository_owner" "${{ inputs.repository_owner }}" )`, `args+=( "--repository" "${{ inputs.repository }}" )`, `args+=( "--package_names" "${{ inputs.package_name }}" )`, `args+=( "--untagged_only" "${{ inputs.untagged_only }}" )`, `args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )`, `args+=( "--with_sigs" "${{ inputs.with_sigs }}")`, `args+=( "--owner_type" "${{ inputs.owner_type }}" )`, and `python ${{ github.action_path }}/clean_ghcr.py`. All inputs should be passed via env: variables and referenced as quoted shell variables instead.
 
 Locations:
 
-- `action.yml:47`
 - `action.yml:56`
-- `action.yml:57`
-- `action.yml:58`
-- `action.yml:59`
-- `action.yml:61`
-- `action.yml:62`
-- `action.yml:64`
-- `action.yml:65`
-- `action.yml:66`
-- `action.yml:67`
-- `action.yml:69`
+
+### script-injection (severity: high)
+
+The 'Cut sha for PR branch name' step in linter.yml directly interpolates ${{ github.sha }} inside a run: shell command (rule a): `echo "GITHUB_SHA_SHORT=$(echo ${{ github.sha }} | cut -c 1-6)" >> $GITHUB_ENV`. Additionally, `echo ${{ env.GITHUB_SHA_SHORT }}` interpolates an env context expression directly in the shell. These expressions are substituted by the Actions runner before the shell sees them, enabling injection of shell metacharacters.
+
+Locations:
+
+- `.github/workflows/linter.yml:18`
+
+### script-injection (severity: high)
+
+Multiple run: blocks in signed.yml directly interpolate ${{ steps.deleted-action.outputs.num_deleted }} inside shell if-statements (rule a): `if [[ "${{ steps.deleted-action.outputs.num_deleted }}" != 2 ]]; then` and `if [[ "${{ steps.deleted-action.outputs.num_deleted }}" != 1 ]]; then`. Step outputs are workflow-controllable and must not be interpolated directly into shell scripts.
+
+Locations:
+
+- `.github/workflows/signed.yml:47`
+- `.github/workflows/signed.yml:62`
+
+### script-injection (severity: high)
+
+Multiple run: blocks in test.yml directly interpolate ${{ steps.deleted-action.outputs.num_deleted }} inside shell if-statements (rule a), e.g.: `if [[ "${{ steps.deleted-action.outputs.num_deleted }}" != 18 ]]; then`. Step outputs are workflow-controllable and must not be interpolated directly into shell scripts. This pattern appears in the clean_untagged_pkgs1, clean_untagged_pkgs2, delete_package, delete_multiple_packages, and clean_repo jobs.
+
+Locations:
+
+- `.github/workflows/test.yml:72`
+- `.github/workflows/test.yml:90`
+- `.github/workflows/test.yml:107`
+- `.github/workflows/test.yml:122`
+- `.github/workflows/test.yml:137`
+
+### github-env-injection (severity: high)
+
+In linter.yml, the 'Cut sha for PR branch name' step writes a value derived from ${{ github.sha }} directly to $GITHUB_ENV without sanitization: `echo "GITHUB_SHA_SHORT=$(echo ${{ github.sha }} | cut -c 1-6)" >> $GITHUB_ENV`. Although github.sha is not typically attacker-controlled, the expression is interpolated directly into the shell command before being written to GITHUB_ENV, and no `printf '%s' ... | tr -d '\n\r'` sanitization step is applied. The required sanitization pipeline must be applied before every write to a special environment file.
+
+Locations:
+
+- `.github/workflows/linter.yml:18`
 
 ### unpinned-uses (severity: high)
 
-All three `uses:` references in action.yml use mutable version tags instead of pinned 40-character commit SHA digests. This exposes the action to supply-chain attacks where a compromised upstream action tag could silently execute malicious code.
-
-Failing references:
-- `uses: actions/setup-python@v5` (line 43)
-- `uses: docker/setup-buildx-action@v3` (line 48)
-- `uses: docker/login-action@v3` (line 50)
-
-Each should be pinned to a full SHA, e.g. `uses: actions/setup-python@<40-char-sha> # v5`.
+Multiple uses: references across action.yml and workflow files use mutable tag or version refs instead of full 40-character commit SHAs, making them vulnerable to supply-chain attacks if the tag is moved. Unpinned references found:
+- action.yml: `actions/setup-python@v5` (line 49), `docker/setup-buildx-action@v3` (line 51), `docker/login-action@v3` (line 53)
+- linter.yml: `actions/checkout@v3` (line 14), `actions/setup-python@v5` (line 21), `peter-evans/create-pull-request@v4` (line 31)
+- reusable.yml: `actions/checkout@v4` (line 32), `docker/setup-buildx-action@v3` (line 35), `docker/login-action@v3` (line 36), `docker/build-push-action@v5` (line 52)
+- signed.yml: `actions/checkout@v4` (multiple steps)
+- test.yml: `actions/checkout@v4` (multiple steps), `docker/setup-buildx-action@v3`, `docker/login-action@v3`
 
 Locations:
 
-- `action.yml:43`
-- `action.yml:48`
-- `action.yml:50`
+- `action.yml:49`
+- `action.yml:51`
+- `action.yml:53`
+- `.github/workflows/linter.yml:14`
+- `.github/workflows/linter.yml:21`
+- `.github/workflows/linter.yml:31`
+- `.github/workflows/reusable.yml:32`
+- `.github/workflows/reusable.yml:35`
+- `.github/workflows/reusable.yml:36`
+- `.github/workflows/reusable.yml:52`
+- `.github/workflows/signed.yml:19`
+- `.github/workflows/signed.yml:44`
+- `.github/workflows/signed.yml:57`
+- `.github/workflows/test.yml:18`
+- `.github/workflows/test.yml:48`
+- `.github/workflows/test.yml:51`
+- `.github/workflows/test.yml:54`
+
+### missing-permissions (severity: medium)
+
+linter.yml has no top-level `permissions:` key and the single job 'formater' also has no job-level `permissions:` key. Without explicit permissions, the workflow inherits the repository's default token permissions, which may be overly broad (write access to all scopes). A minimal permissions block should be added.
+
+Locations:
+
+- `.github/workflows/linter.yml:1`
 
 ### static-inline-injection (severity: high)
 
@@ -152,9 +180,27 @@ Locations:
 
 ### Iteration 1
 
-**Fixes applied:** unpinned-uses, script-injection, static-inline-injection
+**Fixes applied:** script-injection, github-env-injection, unpinned-uses, missing-permissions, static-inline-injection
 
 **Notes:**
 
-Fixed all findings in action.yml: (1) Pinned all three uses: references to full 40-char SHAs: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3, docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3. (2) Moved all ${{ }} expressions out of run: blocks into env: blocks for both the 'Install Python dependencies' step (github.action_path -> ACTION_PATH) and the 'Run action' step (all 9 inputs plus github.action_path mapped to INPUT_TOKEN, INPUT_REPOSITORY_OWNER, INPUT_REPOSITORY, INPUT_PACKAGE_NAME, INPUT_UNTAGGED_ONLY, INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM, INPUT_WITH_SIGS, INPUT_OWNER_TYPE, ACTION_PATH). Shell script now references plain env vars instead of ${{ }} expressions.
+Fixed all findings across action.yml and workflow files:
+
+1. action.yml: Moved all ${{ inputs.* }} and ${{ github.action_path }} expressions out of the run: block into an env: map. Shell script now uses plain env vars ($INPUT_TOKEN, $INPUT_REPOSITORY_OWNER, $INPUT_REPOSITORY, $INPUT_PACKAGE_NAME, $INPUT_UNTAGGED_ONLY, $INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM, $INPUT_WITH_SIGS, $INPUT_OWNER_TYPE, $ACTION_PATH). Also pinned actions/setup-python@v5, docker/setup-buildx-action@v3, docker/login-action@v3 to full SHAs.
+
+2. linter.yml: Added top-level permissions block (contents: read, pull-requests: write). Moved ${{ github.sha }} to env var GITHUB_SHA_INPUT with printf/tr sanitization before writing to GITHUB_ENV. Removed ${{ env.GITHUB_SHA_SHORT }} inline interpolation. Pinned actions/checkout@v3, actions/setup-python@v5, peter-evans/create-pull-request@v4 to full SHAs.
+
+3. reusable.yml: Pinned actions/checkout@v4, docker/setup-buildx-action@v3, docker/login-action@v3, docker/build-push-action@v5 to full SHAs.
+
+4. signed.yml: Moved ${{ steps.deleted-action.outputs.num_deleted }} to env: NUM_DELETED in both run: blocks. Pinned all actions/checkout@v4 references to full SHA.
+
+5. test.yml: Moved ${{ steps.deleted-action.outputs.num_deleted }} to env: NUM_DELETED in all five run: blocks. Pinned actions/checkout@v4, docker/setup-buildx-action@v3, docker/login-action@v3 to full SHAs.
+
+### Iteration 2
+
+**Fixes applied:** script-injection
+
+**Notes:**
+
+Fixed unquoted `${DIGEST}` variable in the 'Sign the published Docker image' step in `.github/workflows/reusable.yml`. Changed `{}@${DIGEST}` to `{}@"${DIGEST}"` to ensure the digest value is always properly quoted, preventing shell metacharacter injection.
 

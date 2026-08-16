@@ -1,0 +1,176 @@
+name: tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  
+concurrency: testing
+permissions:
+  contents: read
+  packages: write
+  # Required by nested `reusable.yml`.
+  id-token: write
+jobs:
+  reset:
+    name: Reset to a clean state
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: false
+          owner_type: user
+
+  add_temp_pkgs1:
+    name: Add temporary packages for testing
+    needs: reset
+    strategy:
+      matrix:
+        image: ['p1', 'p2', 'p3']
+        tag: [1, 2]
+    uses: ./.github/workflows/reusable.yml
+    with:
+      image: ${{ matrix.image }}
+      tag: ${{ matrix.tag }}
+
+  add_temp_pkgs2:
+    name: Add temporary packages for testing make the first untagged
+    needs: add_temp_pkgs1
+    strategy:
+      matrix:
+        image: ['p1', 'p2', 'p3']
+        tag: [1, 2]
+    uses: ./.github/workflows/reusable.yml
+    with:
+      image: ${{ matrix.image }}
+      tag: ${{ matrix.tag }}
+      multiplatform: true
+
+  clean_untagged_pkgs1:
+    name: Clean untagged packages
+    runs-on: ubuntu-latest
+    needs: add_temp_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: true
+          owner_type: user
+          except_untagged_multiplatform: true
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 18 ]]; then
+            exit 1
+          fi
+
+  clean_untagged_pkgs2:
+    name: Clean untagged packages
+    runs-on: ubuntu-latest
+    needs:   clean_untagged_pkgs1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: true
+          owner_type: user
+          except_untagged_multiplatform: false
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 24 ]]; then
+            exit 1
+          fi
+
+  delete_package:
+    name: Delete package
+    runs-on: ubuntu-latest
+    needs: clean_untagged_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          package_name: p1
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 1 ]]; then
+            exit 1
+          fi
+
+  delete_multiple_packages:
+    name: Delete multiple packages
+    runs-on: ubuntu-latest
+    needs: clean_untagged_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          package_name: p2, p3
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 2 ]]; then
+            exit 1
+          fi
+
+  clean_repo:
+    name: Delete all packages in repo
+    runs-on: ubuntu-latest
+    needs:
+      - delete_package
+      - delete_multiple_packages
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 0 ]]; then
+            exit 1
+          fi
