@@ -1,0 +1,216 @@
+name: tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  
+concurrency: testing
+permissions:
+  contents: read
+  packages: write
+jobs:
+  reset:
+    name: reset to a clean state
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: false
+          owner_type: user
+
+  add_temp_pkgs1:
+    name: Add temporary packages for testing
+    runs-on: ubuntu-latest
+    needs: reset
+    strategy:
+      matrix:
+        i: [1, 2]
+        type: ['p1', 'p2', 'p3']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: lower case repository_owner
+        id: lower_case_repository_owner
+        uses: ASzc/change-string-case-action@d0603cd0a7dd490be678164909f65c7737470a7f # v6
+        with:
+          string: ${{ github.repository_owner }}
+      - name: Build and push
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          file: ./CICD/Dockerfile_temp
+          tags: ghcr.io/${{ steps.lower_case_repository_owner.outputs.lowercase }}/${{ matrix.type }}:${{ matrix.i }}
+          build-args: |
+            I=${{ matrix.i }}
+          push: true
+
+  add_temp_pkgs2:
+    name: Add temporary packages for testing make the first untagged
+    runs-on: ubuntu-latest
+    needs: add_temp_pkgs1
+    strategy:
+      matrix:
+        i: [1, 2]
+        type: ['p1', 'p2', 'p3']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: lower case repository_owner
+        id: lower_case_repository_owner
+        uses: ASzc/change-string-case-action@d0603cd0a7dd490be678164909f65c7737470a7f # v6
+        with:
+          string: ${{ github.repository_owner }}
+      - name: Build and push
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          file: ./CICD/Dockerfile_temp
+          tags: ghcr.io/${{ steps.lower_case_repository_owner.outputs.lowercase }}/${{ matrix.type }}:${{ matrix.i }}
+          build-args: |
+            I=${{ matrix.i }}
+          push: true
+          platforms: linux/amd64,linux/arm64
+
+
+  clean_untagged_pkgs1:
+    name: clean untagged packages
+    runs-on: ubuntu-latest
+    needs: add_temp_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: true
+          owner_type: user
+          except_untagged_multiplatform: true
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 18 ]]; then
+            exit 1
+          fi
+
+  clean_untagged_pkgs2:
+    name: clean untagged packages
+    runs-on: ubuntu-latest
+    needs:   clean_untagged_pkgs1
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: true
+          owner_type: user
+          except_untagged_multiplatform: false
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 24 ]]; then
+            exit 1
+          fi
+
+  delete_package:
+    name: delete package
+    runs-on: ubuntu-latest
+    needs: clean_untagged_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          package_name: p1
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 1 ]]; then
+            exit 1
+          fi
+
+  delete_multiple_packages:
+    name: delete multiple package
+    runs-on: ubuntu-latest
+    needs: clean_untagged_pkgs2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          package_name: p2, p3
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 2 ]]; then
+            exit 1
+          fi
+
+  clean_repo:
+    name: delete all package in repo
+    runs-on: ubuntu-latest
+    needs:
+      - delete_package
+      - delete_multiple_packages
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ./
+        id: deleted-action
+        with:
+          token: ${{ secrets.PAT_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          untagged_only: false
+          owner_type: user
+      - shell: bash
+        env:
+          NUM_DELETED: ${{ steps.deleted-action.outputs.num_deleted }}
+        run: |
+          if [[ "$NUM_DELETED" != 0 ]]; then
+            exit 1
+          fi

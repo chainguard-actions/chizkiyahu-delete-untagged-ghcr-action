@@ -1,0 +1,39 @@
+name: Test untagged_only false with nonexistent package
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Pre-install Python dependencies
+        run: pip install requests
+
+      - id: action
+        uses: .
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          repository_owner: ${{ github.repository_owner }}
+          package_name: nonexistent-package-for-testing-99999
+          owner_type: user
+          untagged_only: false
+          except_untagged_multiplatform: false
+
+      - name: Assert num_deleted is 0 for nonexistent package with untagged_only=false
+        env:
+          NUM_DELETED: ${{ steps.action.outputs.num_deleted }}
+        run: |
+          echo "num_deleted: $NUM_DELETED"
+          # When filtering by a nonexistent package, nothing should be deleted
+          if ! echo "$NUM_DELETED" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: expected num_deleted to be a non-negative integer, got: '$NUM_DELETED'"
+            exit 1
+          fi
+          if [ "$NUM_DELETED" != "0" ]; then
+            echo "FAIL: expected num_deleted=0 for nonexistent package, got: '$NUM_DELETED'"
+            exit 1
+          fi
+          echo "PASS: num_deleted=0 as expected for nonexistent package"

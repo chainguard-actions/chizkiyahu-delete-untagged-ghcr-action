@@ -60,7 +60,9 @@ runs:
         python-version: '3.9'
     - name: Install Python dependencies
       shell: bash
-      run: pip install -r "$GITHUB_ACTION_PATH/requirements.txt"
+      env:
+        ACTION_PATH: ${{ github.action_path }}
+      run: pip install -r "$ACTION_PATH/requirements.txt"
     - name: Run action
       id: delete-untagged-ghcr-action
       shell: bash
@@ -72,6 +74,7 @@ runs:
         INPUT_UNTAGGED_ONLY: ${{ inputs.untagged_only }}
         INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM: ${{ inputs.except_untagged_multiplatform }}
         INPUT_OWNER_TYPE: ${{ inputs.owner_type }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         args=( "--token" "$INPUT_TOKEN" )
         args+=( "--repository_owner" "$INPUT_REPOSITORY_OWNER" )
@@ -85,4 +88,4 @@ runs:
         args+=( "--except_untagged_multiplatform" "$INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM" )
         args+=( "--owner_type" "$INPUT_OWNER_TYPE" )
         echo "args: ${args[@]}"
-        python "$GITHUB_ACTION_PATH/clean_ghcr.py" "${args[@]}"
+        python "$ACTION_PATH/clean_ghcr.py" "${args[@]}"

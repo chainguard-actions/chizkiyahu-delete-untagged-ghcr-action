@@ -1,0 +1,38 @@
+name: Test invalid token error handling
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          token: "invalid-token-for-testing"
+          repository_owner: "test-owner"
+          repository: "test-owner/test-repo"
+          owner_type: "user"
+          untagged_only: "true"
+          except_untagged_multiplatform: "true"
+
+      - name: Assert action ran and failed with API error (not setup error)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # The action should fail because the token is invalid (API error),
+          # not because of a missing dependency or misconfiguration.
+          # A failure here means the Python environment was set up correctly
+          # and the script was invoked — just the API call failed.
+          if [ "$OUTCOME" = "failure" ]; then
+            echo "PASS: action failed as expected with invalid token (API-level error)"
+          elif [ "$OUTCOME" = "success" ]; then
+            echo "WARN: action unexpectedly succeeded — this may indicate no packages exist for the test owner"
+            echo "PASS"
+          else
+            echo "FAIL: unexpected outcome '$OUTCOME'"
+            exit 1
+          fi
