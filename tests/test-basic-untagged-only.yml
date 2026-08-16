@@ -1,0 +1,34 @@
+name: Test basic untagged-only deletion (user owner)
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          token: ${{ github.token }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          package_name: this-package-does-not-exist-xyz-99999
+          untagged_only: true
+          except_untagged_multiplatform: false
+          with_sigs: false
+          owner_type: user
+
+      - name: Assert num_deleted output is a non-negative integer
+        env:
+          NUM_DELETED: ${{ steps.action.outputs.num_deleted }}
+        run: |
+          echo "num_deleted: $NUM_DELETED"
+          # num_deleted should be a non-negative integer (0 or more)
+          if ! echo "$NUM_DELETED" | grep -qE '^[0-9]+$'; then
+            echo "FAIL: expected num_deleted to be a non-negative integer, got: '$NUM_DELETED'"
+            exit 1
+          fi
+          echo "PASS: num_deleted=$NUM_DELETED"

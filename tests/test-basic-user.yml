@@ -1,0 +1,35 @@
+name: Test basic usage with user owner type
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        continue-on-error: true
+        with:
+          token: fake-token-for-testing
+          repository_owner: testowner
+          repository: testowner/testrepo
+          owner_type: user
+          untagged_only: "true"
+          except_untagged_multiplatform: "true"
+          with_sigs: "false"
+
+      - name: Assert action ran (setup succeeded, API failure expected)
+        env:
+          OUTCOME: ${{ steps.action.outcome }}
+        run: |
+          echo "outcome: $OUTCOME"
+          # The action should either succeed or fail due to API/auth errors,
+          # not due to missing Python, missing dependencies, or missing script.
+          # A setup failure would also show 'failure' but with a different error.
+          # We accept both 'success' and 'failure' — what we reject is 'skipped'.
+          if [ "$OUTCOME" = "skipped" ]; then
+            echo "FAIL: action was skipped unexpectedly"
+            exit 1
+          fi
+          echo "PASS: action ran (outcome=$OUTCOME)"

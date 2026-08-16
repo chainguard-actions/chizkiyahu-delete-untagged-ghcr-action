@@ -79,7 +79,6 @@ runs:
       id: delete-untagged-ghcr-action
       shell: bash
       env:
-        ACTION_PATH: ${{ github.action_path }}
         INPUT_TOKEN: ${{ inputs.token }}
         INPUT_REPOSITORY_OWNER: ${{ inputs.repository_owner }}
         INPUT_REPOSITORY: ${{ inputs.repository }}
@@ -88,6 +87,7 @@ runs:
         INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM: ${{ inputs.except_untagged_multiplatform }}
         INPUT_WITH_SIGS: ${{ inputs.with_sigs }}
         INPUT_OWNER_TYPE: ${{ inputs.owner_type }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         args=( "--token" "$INPUT_TOKEN" )
         args+=( "--repository_owner" "$INPUT_REPOSITORY_OWNER" )
