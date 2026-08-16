@@ -1,4 +1,4 @@
-name: Test basic usage with all inputs
+name: Test basic usage - delete untagged ghcr
 on:
   workflow_dispatch:
 jobs:
@@ -6,6 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
       - id: action
         uses: .
         continue-on-error: true
@@ -13,20 +14,31 @@ jobs:
           token: fake-token-for-testing
           repository_owner: test-owner
           repository: test-owner/test-repo
-          package_name: test-package
+          owner_type: user
           untagged_only: "true"
           except_untagged_multiplatform: "true"
           with_sigs: "false"
-          owner_type: user
-      - name: Assert action ran (may fail due to fake token)
-        env:
-          OUTCOME: ${{ steps.action.outcome }}
+
+      - name: Assert action ran (setup steps completed)
         run: |
-          echo "action outcome: $OUTCOME"
-          # The action is expected to fail with a fake token since it calls the GitHub API.
-          # We verify the action was invoked (outcome is either success or failure, not skipped).
-          if [ "$OUTCOME" = "skipped" ]; then
-            echo "FAIL: action was skipped, expected it to run"
+          echo "Action outcome: ${{ steps.action.outcome }}"
+          # The action should either succeed (0 deleted) or fail at API call
+          # but NOT fail at setup (Python install, deps). We accept both outcomes.
+          if [ "${{ steps.action.outcome }}" = "success" ] || [ "${{ steps.action.outcome }}" = "failure" ]; then
+            echo "PASS: action ran to completion (setup steps executed)"
+          else
+            echo "FAIL: unexpected outcome: ${{ steps.action.outcome }}"
             exit 1
           fi
-          echo "PASS: action ran with all required inputs covered"
+
+      - name: Assert num_deleted output is set when action succeeds
+        if: steps.action.outcome == 'success'
+        env:
+          NUM_DELETED: ${{ steps.action.outputs.num_deleted }}
+        run: |
+          echo "num_deleted: $NUM_DELETED"
+          if [ -z "$NUM_DELETED" ]; then
+            echo "FAIL: num_deleted output was not set"
+            exit 1
+          fi
+          echo "PASS: num_deleted=$NUM_DELETED"

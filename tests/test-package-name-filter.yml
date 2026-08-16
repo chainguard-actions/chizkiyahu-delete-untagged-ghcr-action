@@ -1,4 +1,4 @@
-name: Test org owner type
+name: Test package name filter
 on:
   workflow_dispatch:
 jobs:
@@ -12,20 +12,20 @@ jobs:
         continue-on-error: true
         with:
           token: fake-token-for-testing
-          repository_owner: test-org
-          repository: test-org/test-repo
-          owner_type: org
+          repository_owner: test-owner
+          package_name: my-package,another-package
+          owner_type: user
           untagged_only: "true"
           except_untagged_multiplatform: "true"
           with_sigs: "false"
 
-      - name: Assert action ran with org owner_type
+      - name: Assert action ran with package_name filter
         run: |
           echo "Action outcome: ${{ steps.action.outcome }}"
           # The action should either succeed (0 deleted) or fail at API call
           # but NOT fail at setup (Python install, deps). We accept both outcomes.
           if [ "${{ steps.action.outcome }}" = "success" ] || [ "${{ steps.action.outcome }}" = "failure" ]; then
-            echo "PASS: action ran with owner_type=org"
+            echo "PASS: action ran with package_name filter"
           else
             echo "FAIL: unexpected outcome: ${{ steps.action.outcome }}"
             exit 1

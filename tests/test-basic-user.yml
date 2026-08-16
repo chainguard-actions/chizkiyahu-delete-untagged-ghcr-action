@@ -1,0 +1,32 @@
+name: Test basic usage - user owner type
+on:
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - id: action
+        uses: .
+        with:
+          token: ${{ github.token }}
+          repository_owner: ${{ github.repository_owner }}
+          repository: ${{ github.repository }}
+          # Use a package name that does not exist so nothing is deleted
+          package_name: this-package-does-not-exist-for-testing-purposes
+          untagged_only: true
+          except_untagged_multiplatform: false
+          with_sigs: false
+          owner_type: user
+
+      - name: Assert num_deleted output is 0
+        env:
+          ACTUAL: ${{ steps.action.outputs.num_deleted }}
+        run: |
+          echo "actual num_deleted: $ACTUAL"
+          if [ "$ACTUAL" != "0" ]; then
+            echo "FAIL: expected num_deleted=0 but got '$ACTUAL'"
+            exit 1
+          fi
+          echo "PASS: num_deleted=0 as expected"
