@@ -16,41 +16,52 @@ Action **chizkiyahu--delete-untagged-ghcr-action/v6.0.0** was hardened automatic
 
 ### unpinned-uses (severity: high)
 
-Three `uses:` references in action.yml are pinned to mutable version tags rather than immutable 40-character SHA digests, making the action vulnerable to supply-chain attacks if the upstream tag is moved or compromised:
-- `actions/setup-python@v5` (line 46)
+Three `uses:` references in action.yml are pinned to mutable version tags instead of full 40-character SHA commit hashes, making the action vulnerable to supply-chain attacks if those tags are moved:
+- `actions/setup-python@v5` (line 47)
 - `docker/setup-buildx-action@v3` (line 52)
 - `docker/login-action@v3` (line 54)
-Each should be replaced with a full SHA pin, e.g. `actions/setup-python@<40-hex-sha> # v5`.
+These should be replaced with their corresponding full commit SHAs.
 
 Locations:
 
-- `action.yml:46`
+- `action.yml:47`
 - `action.yml:52`
 - `action.yml:54`
 
 ### script-injection (severity: high)
 
-Rule (a): GitHub Actions expressions (`${{ ... }}`) are interpolated directly inside `run:` shell command strings, allowing an attacker-controlled value to inject arbitrary shell commands before the shell ever parses the string.
+Multiple `${{ ... }}` expressions are interpolated directly inside `run:` shell command strings (sub-rule a), allowing an attacker-controlled input to inject arbitrary shell commands via metacharacters before the shell ever sees the value.
 
-**Step: 'Install Python dependencies' (line 50):** `run: pip install -r ${{ github.action_path }}/requirements.txt` — `github.action_path` is interpolated directly into the shell command.
+Affected lines in the 'Run action' step:
+- Line 62: `args=( "--token" "${{ inputs.token }}" )`
+- Line 63: `args+=( "--repository_owner" "${{ inputs.repository_owner }}" )`
+- Line 64: `if [[ -n "${{ inputs.repository }}" ]]; then`
+- Line 65: `args+=( "--repository" "${{ inputs.repository }}" )`
+- Line 68: `args+=( "--package_names" "${{ inputs.package_name }}" )`
+- Line 70: `args+=( "--untagged_only" "${{ inputs.untagged_only }}" )`
+- Line 71: `args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )`
+- Line 72: `args+=( "--with_sigs" "${{ inputs.with_sigs }}")`
+- Line 73: `args+=( "--owner_type" "${{ inputs.owner_type }}" )`
+- Line 75: `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"`
 
-**Step: 'Run action' (lines 60–71):** Multiple `inputs.*` and `github.action_path` expressions are interpolated directly into shell array assignments and a `python` invocation:
-- `"--token" "${{ inputs.token }}"`
-- `"--repository_owner" "${{ inputs.repository_owner }}"`
-- `"${{ inputs.repository }}"`
-- `"${{ inputs.package_name }}"`
-- `"${{ inputs.untagged_only }}"`
-- `"${{ inputs.except_untagged_multiplatform }}"`
-- `"${{ inputs.with_sigs }}"`
-- `"${{ inputs.owner_type }}"`
-- `python ${{ github.action_path }}/clean_ghcr.py`
+Also affected in the 'Install Python dependencies' step:
+- Line 50: `run: pip install -r ${{ github.action_path }}/requirements.txt`
 
-Fix: Move all `${{ inputs.* }}` values into `env:` variables and reference them as quoted shell variables (e.g. `"$INPUT_TOKEN"`), and use the `$GITHUB_ACTION_PATH` environment variable instead of `${{ github.action_path }}`.
+Fix: Move all `inputs.*` values into `env:` variables and reference them as quoted shell variables (e.g., `"$INPUT_TOKEN"`) inside the `run:` block. Use `$GITHUB_ACTION_PATH` (the pre-set env var) instead of `${{ github.action_path }}`.
 
 Locations:
 
 - `action.yml:50`
-- `action.yml:60`
+- `action.yml:62`
+- `action.yml:63`
+- `action.yml:64`
+- `action.yml:65`
+- `action.yml:68`
+- `action.yml:70`
+- `action.yml:71`
+- `action.yml:72`
+- `action.yml:73`
+- `action.yml:75`
 
 ### static-inline-injection (severity: high)
 
@@ -140,5 +151,8 @@ Locations:
 
 **Notes:**
 
-Fixed all three unpinned action references by pinning to full commit SHAs (actions/setup-python@a26af69..., docker/setup-buildx-action@8d2750c..., docker/login-action@c94ce9f...). Fixed all script injection findings by moving every ${{ inputs.* }} and ${{ github.action_path }} expression out of run: shell strings into env: blocks, then referencing them as plain shell variables ($INPUT_TOKEN, $INPUT_REPOSITORY_OWNER, $INPUT_REPOSITORY, $INPUT_PACKAGE_NAME, $INPUT_UNTAGGED_ONLY, $INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM, $INPUT_WITH_SIGS, $INPUT_OWNER_TYPE, $ACTION_PATH) in the shell scripts.
+Fixed all three findings in action.yml:
+1. Pinned actions/setup-python@v5 to SHA a26af69be951a213d495a4c3e4e4022e16d87065, docker/setup-buildx-action@v3 to SHA 8d2750c68a42422c14e847fe6c8ac0403b4cbd6f, and docker/login-action@v3 to SHA c94ce9fb468520275223c153574b00df6fe4bcc9.
+2. Moved all ${{ inputs.* }} expressions (token, repository_owner, repository, package_name, untagged_only, except_untagged_multiplatform, with_sigs, owner_type) into an env: block on the 'Run action' step, referencing them as $INPUT_* shell variables.
+3. Replaced ${{ github.action_path }} with the pre-set $GITHUB_ACTION_PATH environment variable in both the 'Install Python dependencies' and 'Run action' steps.
 

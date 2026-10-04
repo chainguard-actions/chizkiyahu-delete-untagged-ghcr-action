@@ -64,9 +64,7 @@ runs:
         python-version: '3.11'
     - name: Install Python dependencies
       shell: bash
-      env:
-        ACTION_PATH: ${{ github.action_path }}
-      run: pip install -r "$ACTION_PATH/requirements.txt"
+      run: pip install -r "$GITHUB_ACTION_PATH/requirements.txt"
     - name: Set up Docker Buildx
       uses: chainguard-actions/docker-setup-buildx-action@6d415f71ab3ef9a7738ade671313ffac4ba9f06c # v3
     - name: Login to GitHub Container Registry with PAT_TOKEN
@@ -87,7 +85,6 @@ runs:
         INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM: ${{ inputs.except_untagged_multiplatform }}
         INPUT_WITH_SIGS: ${{ inputs.with_sigs }}
         INPUT_OWNER_TYPE: ${{ inputs.owner_type }}
-        ACTION_PATH: ${{ github.action_path }}
       run: |
         args=( "--token" "$INPUT_TOKEN" )
         args+=( "--repository_owner" "$INPUT_REPOSITORY_OWNER" )
@@ -102,4 +99,4 @@ runs:
         args+=( "--with_sigs" "$INPUT_WITH_SIGS")
         args+=( "--owner_type" "$INPUT_OWNER_TYPE" )
         echo "args: ${args[@]}"
-        python "$ACTION_PATH/clean_ghcr.py" "${args[@]}"
+        python "$GITHUB_ACTION_PATH/clean_ghcr.py" "${args[@]}"
