@@ -10,49 +10,33 @@
 
 **Harden Agent Version:** `2`
 
-Action **chizkiyahu--delete-untagged-ghcr-action/v5.0.0** was hardened automatically. 11 finding(s) were identified and resolved across 1 iteration(s).
+Action **chizkiyahu--delete-untagged-ghcr-action/v5.0.0** was hardened automatically. 12 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
-### unpinned-uses (severity: high)
+### script-injection (severity: high)
 
-The composite action uses `actions/setup-python@v5`, which is pinned to a mutable version tag (`@v5`) rather than an immutable 40-character commit SHA. This means the action could be silently updated to a different (potentially malicious) version without any change to this file, creating a supply-chain risk.
+Sub-rule (a): a GitHub Actions expression is placed directly inside a run: block. Offending line: `run: pip install -r ${{ github.action_path }}/requirements.txt`. Pass github.action_path through env and quote it, e.g. "$GITHUB_ACTION_PATH/requirements.txt".
 
 Locations:
 
-- `action.yml:42`
+- `action.yml:49`
 
 ### script-injection (severity: high)
 
-Sub-rule (a): Two `run:` blocks in action.yml directly interpolate `${{ ... }}` GitHub Actions expressions inside shell command strings, enabling script injection.
-
-1. "Install Python dependencies" step (line 45): `pip install -r ${{ github.action_path }}/requirements.txt` — `github.action_path` is interpolated directly into the shell command before the shell parses it.
-
-2. "Run action" step (lines 50–62): Multiple `inputs.*` values are interpolated directly into shell commands:
-   - `"${{ inputs.token }}"`
-   - `"${{ inputs.repository_owner }}"`
-   - `"${{ inputs.repository }}"`
-   - `"${{ inputs.package_name }}"`
-   - `"${{ inputs.untagged_only }}"`
-   - `"${{ inputs.except_untagged_multiplatform }}"`
-   - `"${{ inputs.owner_type }}"`
-   - `python ${{ github.action_path }}/clean_ghcr.py`
-
-An attacker who controls any of these inputs can inject shell metacharacters (e.g. `"; malicious_command; "`) that are executed by the shell before quoting takes effect. The fix is to pass all inputs via `env:` variables and reference them as properly double-quoted shell variables (e.g., `"$INPUT_TOKEN"`).
+Sub-rule (a): the 'Run action' step places many expressions directly inside its run: script, so a crafted input can break out of the quotes and run commands. Offending lines include: `args=( "--token" "${{ inputs.token }}" )`, `args+=( "--repository_owner" "${{ inputs.repository_owner }}" )`, `if [[ -n "${{ inputs.repository }}" ]]`, `args+=( "--package_names" "${{ inputs.package_name }}" )`, `args+=( "--untagged_only" "${{ inputs.untagged_only }}" )`, `args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )`, `args+=( "--owner_type" "${{ inputs.owner_type }}" )`, `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"`. Move each value into an env: variable and use it double-quoted.
 
 Locations:
 
-- `action.yml:45`
-- `action.yml:50`
-- `action.yml:51`
-- `action.yml:52`
 - `action.yml:53`
-- `action.yml:55`
-- `action.yml:56`
-- `action.yml:58`
-- `action.yml:59`
-- `action.yml:60`
-- `action.yml:62`
+
+### unpinned-uses (severity: high)
+
+The composite step points to a version tag instead of a full commit SHA: `uses: actions/setup-python@v5`.
+
+Locations:
+
+- `action.yml:44`
 
 ### static-inline-injection (severity: high)
 
@@ -130,11 +114,9 @@ Locations:
 
 ### Iteration 1
 
-**Fixes applied:** unpinned-uses, script-injection, static-inline-injection
+**Fixes applied:** script-injection, unpinned-uses, static-inline-injection
 
 **Notes:**
 
-Fixed all findings in action.yml:
-1. Pinned actions/setup-python@v5 to full commit SHA a26af69be951a213d495a4c3e4e4022e16d87065 (keeping # v5 comment).
-2. Moved all ${{ inputs.* }} and ${{ github.action_path }} expressions out of run: blocks into env: blocks for both the 'Install Python dependencies' step and the 'Run action' step. Shell scripts now reference plain environment variables ($INPUT_TOKEN, $INPUT_REPOSITORY_OWNER, $INPUT_REPOSITORY, $INPUT_PACKAGE_NAME, $INPUT_UNTAGGED_ONLY, $INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM, $INPUT_OWNER_TYPE, $ACTION_PATH), eliminating all script injection vectors.
+Pinned actions/setup-python to a26af69be951a213d495a4c3e4e4022e16d87065 (v5). Replaced ${{ github.action_path }} with "$GITHUB_ACTION_PATH" in quotes. Moved all inputs used in the 'Run action' step into env: vars (INPUT_*) and pass them double-quoted into the bash args array. The commands still get the same arguments: optional inputs are only added when they are non-empty, as before. clean_ghcr.py reads only GITHUB_OUTPUT from the environment, so the new INPUT_* env vars don't clash with anything.
 
