@@ -10,41 +10,35 @@
 
 **Harden Agent Version:** `2`
 
-Action **chizkiyahu--delete-untagged-ghcr-action/v6.1.1** was hardened automatically. 12 finding(s) were identified and resolved across 1 iteration(s).
+Action **chizkiyahu--delete-untagged-ghcr-action/v6.1.1** was hardened automatically. 13 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
 ### unpinned-uses (severity: high)
 
-Three `uses:` references in action.yml are pinned to mutable version tags instead of immutable 40-character SHA digests, making the action vulnerable to supply-chain attacks if the upstream tag is moved or overwritten. Failing references: `actions/setup-python@v6` (line 45), `docker/setup-buildx-action@v4` (line 49), `docker/login-action@v4` (line 51). Each should be replaced with the full commit SHA, e.g. `actions/setup-python@<40-hex-sha> # v6`.
-
-Locations:
-
-- `action.yml:45`
-- `action.yml:49`
-- `action.yml:51`
-
-### script-injection (severity: high)
-
-Sub-rule (a): Multiple `run:` blocks in action.yml directly interpolate GitHub Actions expressions (`${{ inputs.* }}` and `${{ github.* }}`) into shell command strings. This means YAML template substitution occurs before the shell ever sees the value, allowing an attacker-controlled input to inject arbitrary shell metacharacters. Affected steps and offending lines:
-
-1. 'Install Python dependencies' (line 48): `pip install -r ${{ github.action_path }}/requirements.txt` — `${{ github.action_path }}` is interpolated directly into the shell command.
-
-2. 'Run action' (lines 58–70): All eight inputs (`${{ inputs.token }}`, `${{ inputs.repository_owner }}`, `${{ inputs.repository }}`, `${{ inputs.package_name }}`, `${{ inputs.untagged_only }}`, `${{ inputs.except_untagged_multiplatform }}`, `${{ inputs.with_sigs }}`, `${{ inputs.owner_type }}`) and `${{ github.action_path }}` are interpolated directly into shell commands. Fix: move each value into an `env:` block and reference it as a quoted shell variable (e.g. `"$INPUT_TOKEN"`).
+action.yml has composite steps that point to version tags, not full 40-character commit SHAs: `uses: actions/setup-python@v6`, `uses: docker/setup-buildx-action@v4`, `uses: docker/login-action@v4`.
 
 Locations:
 
 - `action.yml:48`
-- `action.yml:58`
-- `action.yml:59`
-- `action.yml:60`
-- `action.yml:62`
-- `action.yml:64`
+- `action.yml:55`
+- `action.yml:57`
+
+### script-injection (severity: high)
+
+Rule (a): the 'Install Python dependencies' step puts an expression straight into the shell command: `run: pip install -r ${{ github.action_path }}/requirements.txt`. Fix: pass the path through env (or use $GITHUB_ACTION_PATH) and double-quote it.
+
+Locations:
+
+- `action.yml:53`
+
+### script-injection (severity: high)
+
+Rule (a): the 'Run action' step puts many expressions straight into the run script, for example `args=( "--token" "${{ inputs.token }}" )`, `"${{ inputs.repository_owner }}"`, `"${{ inputs.repository }}"`, `"${{ inputs.package_name }}"`, `"${{ inputs.untagged_only }}"`, `"${{ inputs.except_untagged_multiplatform }}"`, `"${{ inputs.with_sigs }}"`, `"${{ inputs.owner_type }}"` and `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"`. A caller who supplies an input value can inject shell commands. Fix: move each value into the step's env: block and refer to it as a double-quoted shell variable.
+
+Locations:
+
 - `action.yml:65`
-- `action.yml:66`
-- `action.yml:67`
-- `action.yml:68`
-- `action.yml:70`
 
 ### static-inline-injection (severity: high)
 
@@ -134,12 +128,5 @@ Locations:
 
 **Notes:**
 
-Fixed all three findings in action.yml:
-
-1. **unpinned-uses**: Pinned all three `uses:` references to full 40-char SHAs:
-   - `actions/setup-python@v6` → `@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6`
-   - `docker/setup-buildx-action@v4` → `@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4`
-   - `docker/login-action@v4` → `@dbcb813823bdd20940b903addbd779551569679f # v4`
-
-2. **script-injection / static-inline-injection**: Moved all `${{ inputs.* }}` and `${{ github.action_path }}` expressions out of `run:` shell strings and into `env:` blocks. In the 'Install Python dependencies' step, `github.action_path` is now `ACTION_PATH` env var. In the 'Run action' step, all 8 inputs and `github.action_path` are mapped to env vars (`INPUT_TOKEN`, `INPUT_REPOSITORY_OWNER`, `INPUT_REPOSITORY`, `INPUT_PACKAGE_NAME`, `INPUT_UNTAGGED_ONLY`, `INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM`, `INPUT_WITH_SIGS`, `INPUT_OWNER_TYPE`, `ACTION_PATH`) and referenced as quoted shell variables throughout the script.
+Pinned actions/setup-python, docker/setup-buildx-action and docker/login-action to full commit SHAs, with the tag kept as a comment. The 'Install Python dependencies' and 'Run action' steps now use "$GITHUB_ACTION_PATH" instead of the expression. All inputs are passed through the env: block and used as double-quoted shell variables in the existing args array, so the arguments are the same as before.
 
