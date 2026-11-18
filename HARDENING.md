@@ -4,51 +4,41 @@
 
 > This file was generated automatically by the hardening agent.
 
-**Policy SHA:** `d636be7e43ef829af6e853da6b3c7566db9f72fe`
+**Policy SHA:** `374911c4be584df24e6da57af2d990570ef0f859`
 
 **Test Policy SHA:** `843adf9e4b8f85d0c08b27b9d0b09dd094b54702`
 
 **Harden Agent Version:** `2`
 
-Action **chizkiyahu--delete-untagged-ghcr-action/v6.1.0** was hardened automatically. 12 finding(s) were identified and resolved across 1 iteration(s).
+Action **chizkiyahu--delete-untagged-ghcr-action/v6.1.0** was hardened automatically. 14 finding(s) were identified and resolved across 1 iteration(s).
 
 ## Findings Fixed
 
-### unpinned-uses (severity: high)
+### script-injection (severity: high)
 
-Three `uses:` references in action.yml are pinned to mutable version tags instead of immutable 40-character SHA digests. This exposes the action to supply-chain attacks if the upstream tag is moved or the repository is compromised. Failing references: `actions/setup-python@v5`, `docker/setup-buildx-action@v3`, `docker/login-action@v3`.
+Rule (a): the 'Install Python dependencies' step puts an expression straight into the run: script: `pip install -r ${{ github.action_path }}/requirements.txt`. It is also unquoted. Pass it through env (ACTION_PATH: ${{ github.action_path }}) and quote it: "$ACTION_PATH/requirements.txt".
 
 Locations:
 
-- `action.yml:44`
-- `action.yml:50`
-- `action.yml:52`
+- `action.yml:53`
 
 ### script-injection (severity: high)
 
-Two `run:` blocks in action.yml directly interpolate GitHub Actions expressions (`${{ ... }}`) inside shell command strings (sub-rule a). Before the shell ever sees the command, YAML template substitution replaces these expressions with raw, unquoted values that can contain shell metacharacters, enabling command injection by a caller who controls the inputs.
-
-**Step: 'Install Python dependencies'** (line ~47): `pip install -r ${{ github.action_path }}/requirements.txt` — `github.action_path` is interpolated directly into the shell command.
-
-**Step: 'Run action'** (line ~55 onward): Multiple direct interpolations inside the shell script:
-- `args=( "--token" "${{ inputs.token }}" )`
-- `args+=( "--repository_owner" "${{ inputs.repository_owner }}" )`
-- `if [[ -n "${{ inputs.repository }}" ]]; then`
-- `args+=( "--repository" "${{ inputs.repository }}" )`
-- `if [[ -n "${{ inputs.package_name }}" ]]; then`
-- `args+=( "--package_names" "${{ inputs.package_name }}" )`
-- `args+=( "--untagged_only" "${{ inputs.untagged_only }}" )`
-- `args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )`
-- `args+=( "--with_sigs" "${{ inputs.with_sigs }}")`
-- `args+=( "--owner_type" "${{ inputs.owner_type }}" )`
-- `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"`
-
-All `inputs.*` values should be passed via `env:` variables and then referenced as double-quoted shell variables (e.g. `"$INPUT_TOKEN"`) inside the `run:` block.
+Rule (a): the 'Run action' step puts many expressions straight into the run: script, including `args=( "--token" "${{ inputs.token }}" )`, `"${{ inputs.repository_owner }}"`, `"${{ inputs.repository }}"`, `"${{ inputs.package_name }}"`, `"${{ inputs.untagged_only }}"`, `"${{ inputs.except_untagged_multiplatform }}"`, `"${{ inputs.with_sigs }}"`, `"${{ inputs.owner_type }}"` and `python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"`. Shell quotes don't help here: the values are pasted into the script text before the shell parses it, so a value containing a double quote or $(...) runs as a command. Pass each input through an env: variable and refer to it as "$VAR".
 
 Locations:
 
-- `action.yml:47`
+- `action.yml:66`
+
+### unpinned-uses (severity: high)
+
+The composite steps in action.yml use tag refs instead of full commit SHAs: `uses: actions/setup-python@v5`, `uses: docker/setup-buildx-action@v3`, `uses: docker/login-action@v3`.
+
+Locations:
+
+- `action.yml:48`
 - `action.yml:55`
+- `action.yml:57`
 
 ### static-inline-injection (severity: high)
 
@@ -130,17 +120,114 @@ Locations:
 
 - `action.yml:77`
 
+### prior-fix (severity: high)
+
+Carried forward from this version's previous harden, which fixed it; fix it again unless the code no longer has the problem. The previous harden changed action.yml without recording a finding for it, and this analysis reported nothing there. Re-apply its security changes unless the code no longer needs them. The previous patch:
+```diff
+diff --git a/action.yml b/action.yml
+index 814bdac..2d292b9 100644
+--- a/action.yml
++++ b/action.yml
+@@ -7,10 +7,8 @@ branding:
+ inputs:
+   token:
+     description: >
+-      Personal access token (PAT) used to fetch the repository. The PAT is configured
+-      with the local git config, which enables your scripts to run authenticated git
+-      commands. The post-job step removes the PAT.
+-      needs delete:packages permissions
++      Personal access token (PAT) used to fetch the repository. The PAT is configured with the local git config, which enables your scripts to run authenticated git commands. The post-job step removes the PAT. needs delete:packages permissions
++
+     required: true
+   repository_owner:
+     description: 'The repository owner name'
+@@ -34,27 +32,45 @@ inputs:
+     default: false
+     required: false
+   owner_type:
+-    description : "Owner type (org or user)"
++    description: "Owner type (org or user)"
+     required: true
+ outputs:
+   num_deleted:
+     description: 'Number of package versions that were deleted during the run.'
+-    value:  ${{ steps.delete-untagged-ghcr-action.outputs.num_deleted }}
+-
++    value: ${{ steps.delete-untagged-ghcr-action.outputs.num_deleted }}
+ runs:
+   using: "composite"
+   steps:
+     - name: Setup Python
+       uses: actions/setup-python@v5
+       with:
+         python-version: '3.11'
+     - name: Install Python dependencies
+       shell: bash
+-      run: pip install -r ${{ github.action_path }}/requirements.txt
++      env:
++        ACTION_PATH: ${{ github.action_path }}
++      run: pip install -r "$ACTION_PATH/requirements.txt"
+     - name: Set up Docker Buildx
+       uses: docker/setup-buildx-action@v3
+     - name: Login to GitHub Container Registry with PAT_TOKEN
+       uses: docker/login-action@v3
+       with:
+         registry: ghcr.io
+         username: ${{ github.actor }}
+@@ -62,18 +78,28 @@ runs:
+     - name: Run action
+       id: delete-untagged-ghcr-action
+       shell: bash
++      env:
++        ACTION_PATH: ${{ github.action_path }}
++        INPUT_TOKEN: ${{ inputs.token }}
++        INPUT_REPOSITORY_OWNER: ${{ inputs.repository_owner }}
++        INPUT_REPOSITORY: ${{ inputs.repository }}
++        INPUT_PACKAGE_NAME: ${{ inputs.package_name }}
++        INPUT_UNTAGGED_ONLY: ${{ inputs.untagged_only }}
++        INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM: ${{ inputs.except_untagged_multiplatform }}
++        INPUT_WITH_SIGS: ${{ inputs.with_sigs }}
++        INPUT_OWNER_TYPE: ${{ inputs.owner_type }}
+       run: |
+-        args=( "--token" "${{ inputs.token }}" )
+-        args+=( "--repository_owner" "${{ inputs.repository_owner }}" )
+-        if [[ -n "${{ inputs.repository }}" ]]; then
+-          args+=( "--repository" "${{ inputs.repository }}" )
++        args=( "--token" "$INPUT_TOKEN" )
++        args+=( "--repository_owner" "$INPUT_REPOSITORY_OWNER" )
++        if [[ -n "$INPUT_REPOSITORY" ]]; then
++          args+=( "--repository" "$INPUT_REPOSITORY" )
+         fi
+-        if [[ -n "${{ inputs.package_name }}" ]]; then
+-          args+=( "--package_names" "${{ inputs.package_name }}" )
++        if [[ -n "$INPUT_PACKAGE_NAME" ]]; then
++          args+=( "--package_names" "$INPUT_PACKAGE_NAME" )
+         fi
+-        args+=( "--untagged_only" "${{ inputs.untagged_only }}" )
+-        args+=( "--except_untagged_multiplatform" "${{ inputs.except_untagged_multiplatform }}" )
+-        args+=( "--with_sigs" "${{ inputs.with_sigs }}")
+-        args+=( "--owner_type" "${{ inputs.owner_type }}" )
++        args+=( "--untagged_only" "$INPUT_UNTAGGED_ONLY" )
++        args+=( "--except_untagged_multiplatform" "$INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM" )
++        args+=( "--with_sigs" "$INPUT_WITH_SIGS")
++        args+=( "--owner_type" "$INPUT_OWNER_TYPE" )
+         echo "args: ${args[@]}"
+-        python ${{ github.action_path }}/clean_ghcr.py "${args[@]}"
++        python "$ACTION_PATH/clean_ghcr.py" "${args[@]}"
+
+```
+
+Locations:
+
+- `action.yml`
+
 ## Iteration Notes
 
 ### Iteration 1
 
-**Fixes applied:** unpinned-uses, script-injection, static-inline-injection
+**Fixes applied:** script-injection, unpinned-uses, static-inline-injection, prior-fix
 
 **Notes:**
 
-Fixed all findings in action.yml:
-1. Pinned actions/setup-python@v5 to SHA a26af69be951a213d495a4c3e4e4022e16d87065
-2. Pinned docker/setup-buildx-action@v3 to SHA 8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
-3. Pinned docker/login-action@v3 to SHA c94ce9fb468520275223c153574b00df6fe4bcc9
-4. Moved all ${{ inputs.* }} and ${{ github.action_path }} expressions from both run: blocks into env: blocks, referencing them as plain shell variables ($INPUT_TOKEN, $INPUT_REPOSITORY_OWNER, $INPUT_REPOSITORY, $INPUT_PACKAGE_NAME, $INPUT_UNTAGGED_ONLY, $INPUT_EXCEPT_UNTAGGED_MULTIPLATFORM, $INPUT_WITH_SIGS, $INPUT_OWNER_TYPE, $ACTION_PATH) to prevent script injection.
+All three actions in action.yml are now pinned to full commit SHAs with the tag kept as a comment: setup-python v5, setup-buildx-action v3 and login-action v3. The SHAs came from lookup_action_sha, not guessed. In both run steps, every ${{ }} expression now goes through an env: variable (github.action_path and all the inputs) and is used as a quoted "$VAR". That includes the requirements.txt and clean_ghcr.py paths, which were unquoted before. This re-applies the security changes from the previous harden. Nothing else changed: the script still builds its argument list the same way and still drops the optional repository and package_name flags when they are empty. Nothing was run or tested.
 
